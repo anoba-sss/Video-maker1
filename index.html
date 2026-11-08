@@ -1,0 +1,635 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Ball Video Splitter</title>
+<style>
+:root{
+  --bg:#05070d; --panel:#0c1222; --line:#1e2a44;
+  --fg:#e2e8f0; --muted:#94a3b8; --accent:#22d3ee;
+  color-scheme:dark;
+}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:8px;
+}
+h1{font-size:20px;margin:8px 0 12px;text-align:center}
+h2{font-size:13px;margin:0 0 10px;color:var(--muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.wrap{max-width:560px;margin:0 auto}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.row{margin-top:12px}
+.row:first-of-type{margin-top:0}
+.lbl{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:13px;gap:8px}
+.lbl b{color:var(--fg);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent);margin:6px 0 0}
+input[type=checkbox]{accent-color:var(--accent);width:18px;height:18px;margin:0}
+input[type=color]{width:44px;height:28px;border:1px solid var(--line);border-radius:6px;background:none;padding:0;cursor:pointer}
+select,input[type=file]{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;max-width:100%}
+.color-row{display:flex;justify-content:space-between;align-items:center;margin-top:12px;color:var(--muted);font-size:13px}
+.color-row:first-of-type{margin-top:0}
+button{font:600 15px system-ui,sans-serif;cursor:pointer;border-radius:10px;width:100%;padding:13px;margin:0}
+button.main{background:var(--accent);color:#04111a;border:0}
+button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line);margin-top:10px}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#out{display:block;margin:0 auto;height:60vh;width:auto;max-width:100%;background:#000;border-radius:10px}
+#src{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+progress{width:100%;accent-color:var(--accent)}
+.part{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.part:first-child{border-top:0}
+.part button{width:auto;padding:8px 14px;font-size:14px}
+#status{color:var(--muted);font-size:13px;margin:8px 0 0;min-height:1.4em}
+#panel{position:fixed;inset:0;overflow:auto;background:var(--bg);padding:8px max(16px,env(safe-area-inset-right,0px)) 24px max(16px,env(safe-area-inset-left,0px));z-index:5}
+#panel[hidden]{display:none}
+#panel .inner{max-width:560px;margin:0 auto}
+</style>
+
+<video id="src" playsinline preload="auto"></video>
+
+<div class="wrap">
+  <h1>Ball Video Splitter</h1>
+
+  <div class="card">
+    <h2>Видео</h2>
+    <input id="file" type="file" accept="video/*">
+    <p id="fileInfo" style="color:var(--muted);font-size:13px;margin:8px 0 0">Выберите видео с вашего устройства.</p>
+  </div>
+
+  <canvas id="out" width="405" height="720" aria-label="Предпросмотр"></canvas>
+
+  <div class="card" style="margin-top:12px">
+    <h2>Кадр</h2>
+    <div class="row">
+      <div class="lbl">Приближение видео <b id="zoomV"></b></div>
+      <input id="zoom" type="range" min="100" max="200" step="1" value="100">
+    </div>
+    <div class="row">
+      <div class="lbl">Высота видео сверху <b id="topPctV"></b></div>
+      <input id="topPct" type="range" min="30" max="70" step="1" value="50">
+    </div>
+    <div class="row">
+      <div class="lbl">Качество
+        <select id="q">
+          <option value="480">480p</option>
+          <option value="720" selected>720p</option>
+          <option value="1080">1080p</option>
+        </select>
+      </div>
+    </div>
+    <button class="ghost" id="openSettings" type="button">Настройки игры</button>
+  </div>
+
+  <div class="card">
+    <h2>Части</h2>
+    <div class="row">
+      <div class="lbl">Длина части, мин <b id="partMinV"></b></div>
+      <input id="partMin" type="range" min="1" max="30" step="1" value="15">
+    </div>
+    <div class="row">
+      <div class="lbl">Вливать последнюю часть в предыдущую, если короче (сек) <b id="mergeSecV"></b></div>
+      <input id="mergeSec" type="range" min="0" max="60" step="1" value="20">
+    </div>
+    <p id="partsInfo" style="color:var(--muted);font-size:13px;margin:10px 0 0"></p>
+    <button class="main" id="run" type="button" disabled style="margin-top:12px">Создать части</button>
+    <progress id="prog" max="100" value="0" hidden style="margin-top:12px"></progress>
+    <p id="status"></p>
+    <div id="parts"></div>
+  </div>
+</div>
+
+<div id="panel" hidden role="dialog" aria-label="Настройки игры">
+  <div class="inner">
+    <h1>Настройки игры</h1>
+
+    <div class="card">
+      <h2>Рандомайзер</h2>
+      <div class="row">
+        <div class="lbl">Менять круг каждый уровень <input id="rand" type="checkbox"></div>
+        <p style="color:var(--muted);font-size:12px;margin:6px 0 0">Уровень — когда шар прошёл все кольца. Тогда меняются количество колец, цвет и размер первого кольца. Шар и эффекты не меняются.</p>
+      </div>
+      <div class="row">
+        <div class="lbl">Максимум колец в рандомайзере <b id="randMaxV"></b></div>
+        <input id="randMax" type="range" min="2" max="50" step="1" value="12">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Круг</h2>
+      <div class="row">
+        <div class="lbl">Количество колец <b id="ringsV"></b></div>
+        <input id="rings" type="range" min="1" max="50" step="1" value="8">
+      </div>
+      <div class="row">
+        <div class="lbl">Размер первого кольца <b id="firstV"></b></div>
+        <input id="first" type="range" min="0.05" max="1" step="0.01" value="0.1">
+      </div>
+      <div class="row">
+        <div class="lbl">Размер проёма <b id="gapV"></b></div>
+        <input id="gap" type="range" min="0.1" max="1.5" step="0.05" value="0.6">
+      </div>
+      <div class="row">
+        <div class="lbl">Вращение колец <b id="spinV"></b></div>
+        <input id="spin" type="range" min="0" max="1" step="0.01" value="0.2">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Шар</h2>
+      <div class="row">
+        <div class="lbl">Размер шара <b id="sizeV"></b></div>
+        <input id="size" type="range" min="3" max="12" step="1" value="5">
+      </div>
+      <div class="row">
+        <div class="lbl">Гравитация <b id="gravityV"></b></div>
+        <input id="gravity" type="range" min="0" max="3" step="0.1" value="1.6">
+      </div>
+      <div class="row">
+        <div class="lbl">Упругость отскока <b id="bounceV"></b></div>
+        <input id="bounce" type="range" min="0.5" max="1" step="0.01" value="1">
+      </div>
+      <div class="row">
+        <div class="lbl">Случайное отклонение при отскоке <b id="devV"></b></div>
+        <input id="dev" type="range" min="0" max="0.6" step="0.01" value="0.05">
+      </div>
+      <div class="row">
+        <div class="lbl">Скорость <b id="speedV"></b></div>
+        <input id="speed" type="range" min="1" max="6" step="0.1" value="3">
+      </div>
+      <div class="row">
+        <div class="lbl">Свечение шара <input id="ballGlow" type="checkbox" checked></div>
+      </div>
+      <div class="row">
+        <div class="lbl">Яркость свечения <b id="glowV"></b></div>
+        <input id="glow" type="range" min="0" max="40" step="1" value="18">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Эффекты</h2>
+      <div class="row">
+        <div class="lbl">Сила эффектов <b id="fxV"></b></div>
+        <input id="fx" type="range" min="0" max="2" step="0.1" value="1">
+      </div>
+      <div class="row">
+        <div class="lbl">Длина следа <b id="trailV"></b></div>
+        <input id="trail" type="range" min="0" max="60" step="1" value="20">
+      </div>
+      <div class="row">
+        <div class="lbl">Тряска кадра <b id="shakeV"></b></div>
+        <input id="shake" type="range" min="0" max="2" step="0.1" value="1">
+      </div>
+      <div class="row">
+        <div class="lbl">Взрыв при вылете через кольцо <input id="escFx" type="checkbox" checked></div>
+      </div>
+      <div class="row">
+        <div class="lbl">Искры при касании стены <input id="wallFx" type="checkbox" checked></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Цвета</h2>
+      <div class="color-row">Кольца (если рандомайзер выключен) <input id="cRing" type="color" value="#22d3ee"></div>
+      <div class="color-row">Шар <input id="cBall" type="color" value="#f8fafc"></div>
+      <div class="color-row">След и искры <input id="cAccent" type="color" value="#a78bfa"></div>
+      <div class="color-row">Фон <input id="cBg" type="color" value="#05070d"></div>
+    </div>
+
+    <button class="main" id="closePanel" type="button">Готово</button>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const out = $('out'), octx = out.getContext('2d');
+const vid = $('src');
+const P = {}, C = {}, level = {};
+const MAIN = ['zoom','topPct','partMin','mergeSec'];
+const GAME = ['rings','first','gap','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax'];
+const COLORS = ['cRing','cBall','cAccent','cBg'];
+const BITRATE = { 480: 2000000, 720: 4000000, 1080: 6000000 };
+
+let W = 405, H = 720, topH = 360, gameR = 150, cx = 0, cy = 0;
+let ball = {x:0,y:0,vx:0,vy:0}, trailPts = [], particles = [], shake = 0;
+let dur = 0, busy = false, recJob = null, dlNS = null;
+
+function readParams(){
+  for (const id of [...MAIN, ...GAME]) P[id] = +$(id).value;
+  P.rand = $('rand').checked;
+  P.ballGlow = $('ballGlow').checked;
+  P.escFx = $('escFx').checked;
+  P.wallFx = $('wallFx').checked;
+  for (const id of COLORS) C[id] = $(id).value;
+  $('zoomV').textContent = P.zoom + '%';
+  $('topPctV').textContent = P.topPct + '%';
+  $('partMinV').textContent = P.partMin;
+  $('mergeSecV').textContent = P.mergeSec;
+  for (const id of GAME) $(id + 'V') && ($(id + 'V').textContent = P[id]);
+  $('glowV').textContent = P.glow;
+  $('fxV').textContent = P.fx;
+  $('trailV').textContent = P.trail;
+  $('shakeV').textContent = P.shake;
+  document.body.style.background = C.cBg;
+  updatePartsInfo();
+}
+
+function layout(){
+  H = +$('q').value;
+  W = Math.round(H * 9 / 16 / 2) * 2; // 9:16, чётные размеры для кодека
+  out.width = W; out.height = H;
+  topH = Math.round(H * P.topPct / 100);
+  gameR = Math.min(W, H - topH) / 2 - 12;
+  cx = W / 2; cy = topH + (H - topH) / 2;
+  newLevel();
+}
+
+// новый уровень: при рандомайзере меняется круг, иначе берутся настройки из панели
+function newLevel(){
+  if (P.rand){
+    level.n = 2 + Math.floor(Math.random() * (P.randMax - 1)); // от 2 до выбранного максимума
+    level.first = 0.05 + Math.random() * 0.6;
+    level.color = `hsl(${Math.floor(Math.random() * 360)} 90% 60%)`;
+  } else {
+    level.n = P.rings;
+    level.first = P.first;
+    level.color = C.cRing;
+  }
+  level.rings = [];
+  for (let i = 0; i < level.n; i++){
+    const f = level.n > 1 ? level.first + (1 - level.first) * i / (level.n - 1) : 1;
+    level.rings.push({ r: gameR * f, gc: Math.random() * Math.PI * 2, alive: true, flash: 0, k: 0.8 + Math.random() * 0.4 });
+  }
+  resetBall();
+}
+
+function resetBall(){
+  const sc = gameR / 150, a = Math.random() * Math.PI * 2;
+  ball = { x: 0, y: 0, vx: Math.cos(a) * P.speed * sc, vy: Math.sin(a) * P.speed * sc };
+  trailPts = [];
+}
+
+function burst(x, y, color, count, power){
+  const n = Math.round(count * P.fx);
+  for (let i = 0; i < n; i++){
+    const a = Math.random() * Math.PI * 2, s = (0.5 + Math.random() * 2.5) * power;
+    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1, decay: 0.02 + Math.random() * 0.03, color, size: 1 + Math.random() * 2 });
+  }
+}
+
+function moveGame(f, sc){
+  ball.x += ball.vx * f;
+  ball.y += ball.vy * f;
+  const size = P.size * sc;
+  for (let i = 0; i < 4; i++){
+    const d = Math.hypot(ball.x, ball.y) || 1e-6;
+    const nx = ball.x / d, ny = ball.y / d;
+    const vn = ball.vx * nx + ball.vy * ny;
+    const ring = level.rings.find(r => r.alive && r.r > d);
+    if (!ring || vn <= 0 || d + size < ring.r) break;
+    const a = Math.atan2(ball.y, ball.x);
+    const diff = Math.atan2(Math.sin(a - ring.gc), Math.cos(a - ring.gc));
+    if (Math.abs(diff) < P.gap / 2){
+      ring.alive = false; // вылет через проём
+      if (P.escFx) burst(nx * ring.r, ny * ring.r, level.color, 26, 2.2);
+      shake = Math.max(shake, 6 * P.shake);
+      continue;
+    }
+    ball.vx -= (1 + P.bounce) * vn * nx;
+    ball.vy -= (1 + P.bounce) * vn * ny;
+    const turn = (Math.random() * 2 - 1) * P.dev;
+    const cs = Math.cos(turn), sn = Math.sin(turn);
+    const vx = ball.vx * cs - ball.vy * sn, vy = ball.vx * sn + ball.vy * cs;
+    ball.vx = vx; ball.vy = vy;
+    const sp = Math.hypot(ball.vx, ball.vy), maxSp = P.speed * sc * 2.5;
+    if (sp > maxSp){ ball.vx *= maxSp / sp; ball.vy *= maxSp / sp; }
+    ball.x = nx * (ring.r - size);
+    ball.y = ny * (ring.r - size);
+    ring.flash = P.fx > 0 ? 1 : 0;
+    if (P.wallFx) burst(nx * ring.r, ny * ring.r, C.cAccent, 6, 1.4);
+    shake = Math.max(shake, 1.5 * P.shake);
+    break;
+  }
+}
+
+function stepGame(){
+  const sc = gameR / 150;
+  for (const r of level.rings){
+    r.gc += P.spin * 0.01 * r.k;
+    if (r.flash > 0) r.flash *= 0.88;
+  }
+  ball.vy += P.gravity * 0.05 * sc;
+  for (let s = 0; s < 4; s++) moveGame(0.25, sc);
+
+  if (P.trail > 0){
+    trailPts.push({ x: ball.x, y: ball.y });
+    if (trailPts.length > P.trail) trailPts.shift();
+  } else trailPts = [];
+
+  for (const p of particles){
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.97; p.vy *= 0.97;
+    p.life -= p.decay;
+  }
+  particles = particles.filter(p => p.life > 0);
+  shake *= 0.85;
+
+  // все кольца пройдены — начинается новый уровень
+  if (level.rings.every(r => !r.alive)) newLevel();
+  else if (Math.hypot(ball.x, ball.y) > gameR * 1.5) resetBall();
+}
+
+function drawTop(){
+  if (!vid.videoWidth || vid.readyState < 2) return;
+  const vw = vid.videoWidth, vh = vid.videoHeight;
+  const s = Math.max(W / vw, topH / vh) * (P.zoom / 100); // cover + приближение
+  const sw = W / s, sh = topH / s;
+  octx.drawImage(vid, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, W, topH);
+}
+
+function drawGame(){
+  octx.save();
+  octx.beginPath();
+  octx.rect(0, topH, W, H - topH);
+  octx.clip();
+  octx.translate(cx, cy);
+  const sc = gameR / 150;
+
+  for (const r of level.rings){
+    if (!r.alive) continue;
+    octx.strokeStyle = level.color;
+    octx.lineWidth = Math.max(2, gameR / 60) + r.flash * 3;
+    octx.globalAlpha = 0.75 + r.flash * 0.25;
+    octx.shadowColor = level.color;
+    octx.shadowBlur = P.fx > 0 ? 8 + r.flash * 12 : 0;
+    octx.beginPath();
+    octx.arc(0, 0, r.r, r.gc + P.gap / 2, r.gc + Math.PI * 2 - P.gap / 2);
+    octx.stroke();
+  }
+  octx.globalAlpha = 1;
+  octx.shadowBlur = 0;
+
+  for (let i = 0; i < trailPts.length; i++){
+    const t = (i + 1) / trailPts.length;
+    octx.globalAlpha = t * 0.45;
+    octx.fillStyle = C.cAccent;
+    octx.beginPath();
+    octx.arc(trailPts[i].x, trailPts[i].y, P.size * sc * t * 0.8, 0, Math.PI * 2);
+    octx.fill();
+  }
+  octx.globalAlpha = 1;
+
+  for (const p of particles){
+    octx.globalAlpha = Math.max(p.life, 0);
+    octx.fillStyle = p.color;
+    octx.beginPath();
+    octx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    octx.fill();
+  }
+  octx.globalAlpha = 1;
+
+  octx.shadowColor = C.cBall;
+  octx.shadowBlur = P.ballGlow ? P.glow : 0;
+  octx.fillStyle = C.cBall;
+  octx.beginPath();
+  octx.arc(ball.x, ball.y, P.size * sc, 0, Math.PI * 2);
+  octx.fill();
+  octx.restore();
+}
+
+function renderFrame(){
+  octx.fillStyle = C.cBg;
+  octx.fillRect(0, 0, W, H);
+  const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
+  octx.save();
+  octx.translate(sx, sy);
+  drawTop();
+  stepGame();
+  drawGame();
+  octx.restore();
+}
+
+function loop(){
+  renderFrame();
+  if (recJob && (vid.currentTime >= recJob.t1 || vid.ended)){
+    const j = recJob; recJob = null; j.done();
+  }
+  requestAnimationFrame(loop);
+}
+
+function seek(t){
+  return new Promise(res => {
+    if (Math.abs(vid.currentTime - t) < 0.01) return res();
+    const done = () => { vid.removeEventListener('seeked', done); res(); };
+    vid.addEventListener('seeked', done);
+    vid.currentTime = t;
+  });
+}
+
+function pickType(){
+  const types = ['video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
+  return types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+}
+
+async function recordPart(i, part){
+  const t0 = part.t0, t1 = part.t1;
+  vid.pause();
+  await seek(t0);
+  newLevel(); // каждая часть начинается с чистого уровня
+
+  const stream = out.captureStream(60);
+  try {
+    if (vid.captureStream) vid.captureStream().getAudioTracks().forEach(t => stream.addTrack(t));
+  } catch (e) {}
+
+  const type = pickType();
+  const bps = BITRATE[H] || 4000000;
+  const chunks = [];
+  const rec = new MediaRecorder(stream, type ? { mimeType: type, videoBitsPerSecond: bps } : { videoBitsPerSecond: bps });
+  rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  const stopped = new Promise(r => rec.onstop = r);
+  rec.start(250);
+
+  vid.muted = false; vid.volume = 1;
+  await vid.play();
+  await new Promise(done => { recJob = { t1, done }; });
+  vid.pause();
+  rec.stop();
+  await stopped;
+
+  const mime = (rec.mimeType || type || 'video/webm').split(';')[0];
+  const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+  return { blob: new Blob(chunks, { type: mime }), ext, t0, t1 };
+}
+
+function fmt(s){
+  s = Math.round(s);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+// список частей: если последняя короче порога, она вливается в предыдущую
+function partList(){
+  if (!dur) return [];
+  const L = P.partMin * 60;
+  const arr = [];
+  for (let t = 0; t < dur - 0.5; t += L) arr.push({ t0: t, t1: Math.min(dur, t + L) });
+  if (arr.length > 1 && dur - arr[arr.length - 1].t0 < P.mergeSec){
+    arr.pop();
+    arr[arr.length - 1].t1 = dur;
+  }
+  return arr;
+}
+
+function partCount(){ return partList().length; }
+
+function updatePartsInfo(){
+  if (!P.partMin) return;
+  $('partsInfo').textContent = dur
+    ? 'Видео ' + fmt(dur) + ' — получится частей: ' + partCount() + '. Запись идёт в реальном времени.'
+    : 'Сначала выберите видео.';
+  $('run').disabled = !dur || busy;
+}
+
+function addPartButton(i, res){
+  const row = document.createElement('div');
+  row.className = 'part';
+  const label = document.createElement('span');
+  label.textContent = 'Часть ' + (i + 1) + ' (' + fmt(res.t0) + ' – ' + fmt(res.t1) + ')';
+  const btn = document.createElement('button');
+  btn.className = 'main';
+  btn.type = 'button';
+  btn.textContent = 'Скачать';
+  btn.addEventListener('click', () => downloadPart(res, i));
+  row.append(label, btn);
+  $('parts').appendChild(row);
+}
+
+async function downloadPart(res, i){
+  const filename = 'ball-part-' + (i + 1) + '.' + res.ext;
+  if (!dlNS){
+    $('status').textContent = 'Скачивание здесь недоступно. Откройте страницу в приложении Claude или удерживайте видео, чтобы сохранить.';
+    return;
+  }
+  try {
+    await dlNS.save({ filename, data: res.blob });
+    $('status').textContent = 'Сохранено: ' + filename;
+  } catch (err) {
+    $('status').textContent = err && err.code === 'declined'
+      ? 'Сохранение отменено.'
+      : 'Не удалось сохранить ' + filename + '.';
+  }
+}
+
+async function runAll(){
+  if (busy || !dur) return;
+  busy = true;
+  $('parts').innerHTML = '';
+  $('run').disabled = true;
+  $('prog').hidden = false;
+  const parts = partList();
+  const n = parts.length;
+  try {
+    for (let i = 0; i < n; i++){
+      $('status').textContent = 'Записываю часть ' + (i + 1) + ' из ' + n + '…';
+      $('prog').value = (i / n) * 100;
+      const res = await recordPart(i, parts[i]);
+      addPartButton(i, res);
+    }
+    $('prog').value = 100;
+    $('status').textContent = 'Готово. Скачайте части кнопками ниже.';
+  } catch (err) {
+    $('status').textContent = 'Запись прервана: ' + (err && err.message ? err.message : 'ошибка');
+  } finally {
+    busy = false;
+    $('prog').hidden = true;
+    updatePartsInfo();
+  }
+}
+
+async function initCaps(){
+  try { dlNS = window.claude ? await window.claude.use('downloads') : null; }
+  catch (e) { dlNS = null; }
+}
+
+// видео хранится в браузере (IndexedDB), чтобы не пропадать при переходах по экранам и перезагрузке
+function idbOpen(){
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('ballsplit', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbPut(key, val){
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('kv', 'readwrite');
+    tx.objectStore('kv').put(val, key);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbGet(key){
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const q = db.transaction('kv', 'readonly').objectStore('kv').get(key);
+    q.onsuccess = () => res(q.result);
+    q.onerror = () => rej(q.error);
+  });
+}
+
+function loadVideoFile(f){
+  vid.src = URL.createObjectURL(f);
+  vid.onloadedmetadata = () => {
+    dur = vid.duration;
+    // показываем первый кадр, чтобы сразу было видно раскладку
+    vid.currentTime = 0.05;
+    $('fileInfo').textContent = 'Загружено: ' + f.name + ' (' + fmt(dur) + ')';
+    $('parts').innerHTML = '';
+    updatePartsInfo();
+  };
+}
+
+$('file').addEventListener('change', async () => {
+  const f = $('file').files[0];
+  if (!f) return;
+  loadVideoFile(f);
+  try { await idbPut('video', f); } catch (e) {}
+});
+
+async function restoreVideo(){
+  try {
+    const f = await idbGet('video');
+    if (f) loadVideoFile(f);
+  } catch (e) {}
+}
+
+// на iPhone кадр появляется только после короткого воспроизведения, поэтому запускаем видео без звука и сразу ставим паузу
+vid.addEventListener('loadeddata', async () => {
+  vid.muted = true;
+  try { await vid.play(); vid.pause(); } catch (e) {}
+  try { vid.currentTime = 0.05; } catch (e) {}
+});
+
+$('openSettings').addEventListener('click', () => { $('panel').hidden = false; });
+$('closePanel').addEventListener('click', () => { $('panel').hidden = true; });
+
+for (const id of [...MAIN, ...GAME, ...COLORS, 'glow','fx','trail','shake','size','gravity','bounce','dev','speed','ballGlow','escFx','wallFx']){
+  $(id).addEventListener('input', readParams);
+}
+$('ballGlow').addEventListener('change', readParams);
+$('escFx').addEventListener('change', readParams);
+$('wallFx').addEventListener('change', readParams);
+$('rand').addEventListener('change', () => { readParams(); newLevel(); });
+for (const id of ['rings','first','gap','spin']) $(id).addEventListener('input', () => {
+  readParams();
+  if (id === 'rings' || id === 'first') newLevel();
+});
+$('topPct').addEventListener('input', () => { readParams(); layout(); });
+$('q').addEventListener('change', layout);
+$('run').addEventListener('click', runAll);
+
+readParams();
+layout();
+initCaps();
+restoreVideo();
+loop();
+</script>
