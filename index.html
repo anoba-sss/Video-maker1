@@ -456,8 +456,15 @@ async function recordPart(i, part){
   rec.start(250);
 
   vid.muted = false; vid.volume = 1;
-  await vid.play();
-  await new Promise(done => { recJob = { t1, done }; });
+  try { await vid.play(); }
+  catch (e) { throw new Error('браузер не дал запустить видео'); }
+  await new Promise(done => {
+    recJob = { t1, done };
+    // запасной таймер: если видео не продвигается по времени, запись всё равно остановится
+    setTimeout(() => {
+      if (recJob && recJob.done === done){ recJob = null; done(); }
+    }, (t1 - t0 + 3) * 1000);
+  });
   vid.pause();
   rec.stop();
   await stopped;
@@ -512,7 +519,16 @@ function addPartButton(i, res){
 async function downloadPart(res, i){
   const filename = 'ball-part-' + (i + 1) + '.' + res.ext;
   if (!dlNS){
-    $('status').textContent = 'Скачивание здесь недоступно. Откройте страницу в приложении Claude или удерживайте видео, чтобы сохранить.';
+    // обычное скачивание браузера (работает на сайте в Safari, Orion, Chrome)
+    const url = URL.createObjectURL(res.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    $('status').textContent = 'Скачивание: ' + filename;
     return;
   }
   try {
@@ -585,7 +601,13 @@ async function idbGet(key){
 
 function loadVideoFile(f){
   vid.src = URL.createObjectURL(f);
+  vid.onerror = () => {
+    $('fileInfo').textContent = 'Этот браузер не открывает это видео. Попробуйте файл MP4 (H.264).';
+  };
   vid.onloadedmetadata = () => {
+    if (!vid.videoWidth){
+      $('fileInfo').textContent = 'Видео загружено, но картинки нет. Попробуйте файл MP4 (H.264).';
+    }
     dur = vid.duration;
     // показываем первый кадр, чтобы сразу было видно раскладку
     vid.currentTime = 0.05;
@@ -638,6 +660,9 @@ readParams();
 layout();
 initCaps();
 restoreVideo();
+if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream){
+  $('status').textContent = 'Этот браузер не умеет записывать видео. Откройте сайт в Safari или Chrome.';
+}
 loop();
 </script>
 
