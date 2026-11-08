@@ -31,6 +31,7 @@ h2{font-size:13px;margin:0 0 10px;color:var(--muted);font-weight:600;letter-spac
 input[type=range]{width:100%;accent-color:var(--accent);margin:6px 0 0}
 input[type=checkbox]{accent-color:var(--accent);width:18px;height:18px;margin:0}
 input[type=color]{width:44px;height:28px;border:1px solid var(--line);border-radius:6px;background:none;padding:0;cursor:pointer}
+input[type=file]{box-sizing:border-box;width:100%;display:block;overflow:hidden}
 select,input[type=file]{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;max-width:100%}
 .color-row{display:flex;justify-content:space-between;align-items:center;margin-top:12px;color:var(--muted);font-size:13px}
 .color-row:first-of-type{margin-top:0}
@@ -113,6 +114,10 @@ progress{width:100%;accent-color:var(--accent)}
       <div class="row">
         <div class="lbl">Менять круг каждый уровень <input id="rand" type="checkbox"></div>
         <p style="color:var(--muted);font-size:12px;margin:6px 0 0">Уровень — когда шар прошёл все кольца. Тогда меняются количество колец, цвет и размер первого кольца. Шар и эффекты не меняются.</p>
+      </div>
+      <div class="row">
+        <div class="lbl">Минимум колец в рандомайзере <b id="randMinV"></b></div>
+        <input id="randMin" type="range" min="1" max="50" step="1" value="2">
       </div>
       <div class="row">
         <div class="lbl">Максимум колец в рандомайзере <b id="randMaxV"></b></div>
@@ -211,7 +216,7 @@ const out = $('out'), octx = out.getContext('2d');
 const vid = $('src');
 const P = {}, C = {}, level = {};
 const MAIN = ['zoom','topPct','partMin','mergeSec'];
-const GAME = ['rings','first','gap','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax'];
+const GAME = ['rings','first','gap','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax','randMin'];
 const COLORS = ['cRing','cBall','cAccent','cBg'];
 const BITRATE = { 480: 2000000, 720: 4000000, 1080: 6000000 };
 
@@ -252,7 +257,9 @@ function layout(){
 // новый уровень: при рандомайзере меняется круг, иначе берутся настройки из панели
 function newLevel(){
   if (P.rand){
-    level.n = 2 + Math.floor(Math.random() * (P.randMax - 1)); // от 2 до выбранного максимума
+    // от выбранного минимума до максимума
+    const lo = Math.min(P.randMin, P.randMax), hi = Math.max(P.randMin, P.randMax);
+    level.n = lo + Math.floor(Math.random() * (hi - lo + 1));
     level.first = 0.05 + Math.random() * 0.6;
     level.color = `hsl(${Math.floor(Math.random() * 360)} 90% 60%)`;
   } else {
