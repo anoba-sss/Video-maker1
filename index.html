@@ -64,6 +64,7 @@ progress{width:100%;accent-color:var(--accent)}
   </div>
 
   <canvas id="out" width="405" height="720" aria-label="Предпросмотр"></canvas>
+  <p id="hud" style="text-align:center;font-weight:600;margin:8px 0 0;min-height:1.4em"></p>
 
   <div class="card" style="margin-top:12px">
     <h2>Кадр</h2>
@@ -111,6 +112,27 @@ progress{width:100%;accent-color:var(--accent)}
     <h1>Настройки игры</h1>
 
     <div class="card">
+      <h2>Режим</h2>
+      <div class="row">
+        <div class="lbl">Режим игры
+          <select id="mode"><option value="rings" selected>Кольца</option><option value="square">Квадрат с проёмом внизу</option></select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="lbl">Ширина проёма в квадрате <b id="sqGapV"></b>%</div>
+        <input id="sqGap" type="range" min="5" max="80" step="1" value="25">
+      </div>
+      <div class="row">
+        <div class="lbl">Скорость проёма <b id="sqSpeedV"></b></div>
+        <input id="sqSpeed" type="range" min="1" max="10" step="0.5" value="4">
+      </div>
+      <div class="row">
+        <div class="lbl">Нужно набрать шаров на экране <b id="targetV"></b></div>
+        <input id="target" type="range" min="2" max="200" step="1" value="50">
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Рандомайзер</h2>
       <div class="row">
         <div class="lbl">Менять круг каждый уровень <input id="rand" type="checkbox"></div>
@@ -143,6 +165,14 @@ progress{width:100%;accent-color:var(--accent)}
       <div class="row">
         <div class="lbl">Расстояние между кольцами <b id="spacingV"></b>%</div>
         <input id="spacing" type="range" min="0" max="100" step="1" value="100">
+      </div>
+      <div class="row">
+        <div class="lbl">Разброс скорости колец <b id="spinVarV"></b>%</div>
+        <input id="spinVar" type="range" min="0" max="100" step="1" value="50">
+      </div>
+      <div class="row">
+        <div class="lbl">Рост проёма к внешним кольцам <b id="gapGrowV"></b>%</div>
+        <input id="gapGrow" type="range" min="0" max="200" step="1" value="50">
       </div>
       <div class="row">
         <div class="lbl">Вращение колец <b id="spinV"></b></div>
@@ -231,7 +261,7 @@ const out = $('out'), octx = out.getContext('2d');
 const vid = $('src');
 const P = {}, C = {}, level = {};
 const MAIN = ['zoom','topPct','partMin','mergeSec'];
-const GAME = ['rings','first','gap','spacing','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax','randMin','introT'];
+const GAME = ['rings','first','gap','spacing','spinVar','gapGrow','sqGap','sqSpeed','target','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax','randMin','introT'];
 const COLORS = ['cRing','cBall','cAccent','cBg'];
 const BITRATE = { 480: 2000000, 720: 4000000, 1080: 6000000 };
 
@@ -248,6 +278,7 @@ function readParams(){
   P.wallFx = $('wallFx').checked;
   P.shatter = $('shatterFx').checked;
   P.intro = $('intro').value;
+  P.mode = $('mode').value;
   for (const id of COLORS) C[id] = $(id).value;
   $('zoomV').textContent = P.zoom + '%';
   $('topPctV').textContent = P.topPct + '%';
@@ -274,6 +305,9 @@ function layout(){
 
 // новый уровень: при рандомайзере меняется круг, иначе берутся настройки из панели
 function newLevel(){
+  if (P.mode === 'square'){ newSquare(); return; }
+  level.mode = 'rings';
+  $('hud').textContent = '';
   if (P.rand){
     // от выбранного минимума до максимума
     const lo = Math.min(P.randMin, P.randMax), hi = Math.max(P.randMin, P.randMax);
@@ -297,7 +331,7 @@ function newLevel(){
     const step = sp * full + (1 - sp) * gameR / 58;
     const f = level.n > 1 ? Math.min(1, level.first + step * i / gameR) : 1;
     const gcT = Math.random() * Math.PI * 2;
-    level.rings.push({ r: gameR * f, gcT, gc: cone ? 0 : gcT, dr: cone ? 0 : gameR * f, dg: cone ? 0 : gcT, a: cone ? 0 : 1, alive: true, flash: 0, k: 0.8 + Math.random() * 0.4 });
+    level.rings.push({ r: gameR * f, gcT, gc: cone ? 0 : gcT, dr: cone ? 0 : gameR * f, dg: cone ? 0 : gcT, a: cone ? 0 : 1, alive: true, flash: 0, k: 1 + (Math.random() * 2 - 1) * P.spinVar / 100 });
   }
   resetBall();
 }
@@ -318,11 +352,11 @@ function burst(x, y, color, count, power){
 
 // распад кольца: дуга рассыпается на осколки, которые разлетаются от центра
 function shatter(ring, sc){
-  const span = Math.PI * 2 - P.gap;
+  const span = Math.PI * 2 - ring.gap;
   const n = Math.min(120, Math.max(8, Math.round(span * ring.r / (gameR * 0.09))));
   const step = span / n, len = step * ring.r * 0.9, w = Math.max(2, gameR / 60);
   for (let i = 0; i < n; i++){
-    const th = ring.gc + P.gap / 2 + (i + 0.5) * step;
+    const th = ring.gc + ring.gap / 2 + (i + 0.5) * step;
     const cs = Math.cos(th), sn = Math.sin(th);
     const v = (0.5 + Math.random()) * sc * 2.5 * P.fx;
     const t = (Math.random() - 0.5) * 0.6 * sc;
@@ -345,7 +379,7 @@ function moveGame(f, sc){
     if (!ring || vn <= 0 || d + size < ring.r) break;
     const a = Math.atan2(ball.y, ball.x);
     const diff = Math.atan2(Math.sin(a - ring.gc), Math.cos(a - ring.gc));
-    if (Math.abs(diff) < P.gap / 2){
+    if (Math.abs(diff) < ring.gap / 2){
       ring.alive = false; // вылет через проём
       if (P.shatter && P.fx > 0) shatter(ring, sc);
       if (P.escFx) burst(nx * ring.r, ny * ring.r, level.color, 26, 2.2);
@@ -369,13 +403,100 @@ function moveGame(f, sc){
   }
 }
 
+// режим «Квадрат»: квадрат с проёмом в нижней стороне, шары прыгают вверх-вниз без отклонения
+function sqBall(S){
+  return { x: (Math.random() * 2 - 1) * S.h * 0.9, y: S.spawnY, vy: 0, dead: false };
+}
+
+function newSquare(){
+  const h = gameR * 0.95;
+  level.mode = 'square';
+  level.color = C.cRing;
+  level.rings = [];
+  level.introF = 0;
+  const gw = h * 2 * P.sqGap / 100;
+  const S = { h, gw, gx: 0, gv: 0, dir: Math.random() < 0.5 ? 1 : -1, spawnY: -h * 0.15, balls: [] };
+  S.gx = (Math.random() * 2 - 1) * (h - gw / 2);
+  S.balls.push(sqBall(S));
+  level.sq = S;
+  shards = [];
+  $('hud').textContent = '';
+}
+
+function stepSquare(){
+  const sc = gameR / 150, S = level.sq;
+  S.h = gameR * 0.95;
+  S.spawnY = -S.h * 0.15;
+  S.gw = S.h * 2 * P.sqGap / 100;
+  S.gv = P.sqSpeed * 0.3 * sc;
+  const target = P.target;
+  const n0 = S.balls.length;
+  if (n0 < target){
+    // проём ездит от одного края к другому
+    const range = S.h - S.gw / 2;
+    S.gx += S.dir * S.gv;
+    if (S.gx > range){ S.gx = range; S.dir = -1; }
+    if (S.gx < -range){ S.gx = -range; S.dir = 1; }
+    const g = P.gravity * 0.05 * sc;
+    let escaped = 0;
+    for (const b of S.balls){
+      b.vy += g;
+      for (let s = 0; s < 4; s++){
+        b.y += b.vy * 0.25;
+        if (b.y >= S.h){
+          if (Math.abs(b.x - S.gx) < S.gw / 2){ b.dead = true; escaped++; break; } // вылет через проём
+          b.y = 2 * S.h - b.y; // отскок с той же силой, без отклонения по горизонтали
+          b.vy = -Math.abs(b.vy);
+        }
+      }
+    }
+    if (escaped){
+      // вместо каждого вылетевшего шара появляются два новых
+      S.balls = S.balls.filter(b => !b.dead);
+      for (let i = 0; i < escaped * 2; i++) S.balls.push(sqBall(S));
+    }
+  }
+  const n = S.balls.length;
+  $('hud').textContent = 'Шаров: ' + n + ' / ' + target + (n >= target ? ' — готово' : '');
+}
+
+function drawSquare(sc){
+  const S = level.sq, h = S.h, lw = Math.max(2, gameR / 60);
+  octx.strokeStyle = level.color;
+  octx.lineWidth = lw;
+  octx.shadowColor = level.color;
+  octx.shadowBlur = P.fx > 0 ? 8 : 0;
+  octx.globalAlpha = 1;
+  octx.beginPath();
+  octx.moveTo(-h, h); octx.lineTo(-h, -h); octx.lineTo(h, -h); octx.lineTo(h, h);
+  octx.stroke();
+  // нижняя сторона с проёмом
+  octx.beginPath();
+  octx.moveTo(-h, h); octx.lineTo(S.gx - S.gw / 2, h);
+  octx.moveTo(S.gx + S.gw / 2, h); octx.lineTo(h, h);
+  octx.stroke();
+
+  octx.shadowColor = C.cBall;
+  octx.shadowBlur = P.ballGlow ? P.glow : 0;
+  octx.fillStyle = C.cBall;
+  for (const b of S.balls){
+    octx.beginPath();
+    octx.arc(b.x, b.y, P.size * sc, 0, Math.PI * 2);
+    octx.fill();
+  }
+  octx.shadowBlur = 0;
+}
+
 function stepGame(){
+  if (level.mode === 'square'){ stepSquare(); return; }
   const sc = gameR / 150;
   const D = level.introF || 0;
   const intro = D > 0 && level.t < D;
   if (intro) level.t++;
   const n = level.rings.length;
   level.rings.forEach((r, i) => {
+    // проём растёт к внешним кольцам
+    r.gap = Math.min(2.8, P.gap * (1 + P.gapGrow / 100 * (n > 1 ? i / (n - 1) : 0)));
     if (intro){
       const u = level.t / D;
       const p = Math.min(1, Math.max(0, (u - (i / n) * 0.5) / 0.5)); // внутренние кольца появляются раньше
@@ -430,6 +551,7 @@ function drawGame(){
   octx.clip();
   octx.translate(cx, cy);
   const sc = gameR / 150;
+  if (level.mode === 'square'){ drawSquare(sc); octx.restore(); return; }
 
   for (const r of level.rings){
     if (!r.alive) continue;
@@ -439,7 +561,7 @@ function drawGame(){
     octx.shadowColor = level.color;
     octx.shadowBlur = P.fx > 0 ? 8 + r.flash * 12 : 0;
     octx.beginPath();
-    octx.arc(0, 0, r.dr, r.gc + P.gap / 2, r.gc + Math.PI * 2 - P.gap / 2);
+    octx.arc(0, 0, r.dr, r.gc + r.gap / 2, r.gc + Math.PI * 2 - r.gap / 2);
     octx.stroke();
   }
   octx.globalAlpha = 1;
@@ -742,10 +864,11 @@ $('escFx').addEventListener('change', readParams);
 $('wallFx').addEventListener('change', readParams);
 $('shatterFx').addEventListener('change', readParams);
 $('intro').addEventListener('change', () => { readParams(); newLevel(); });
+$('mode').addEventListener('change', () => { readParams(); newLevel(); });
 $('rand').addEventListener('change', () => { readParams(); newLevel(); });
-for (const id of ['rings','first','gap','spacing','spin']) $(id).addEventListener('input', () => {
+for (const id of ['rings','first','gap','spacing','spinVar','gapGrow','spin']) $(id).addEventListener('input', () => {
   readParams();
-  if (id === 'rings' || id === 'first' || id === 'spacing') newLevel();
+  if (id === 'rings' || id === 'first' || id === 'spacing' || id === 'spinVar') newLevel();
 });
 $('topPct').addEventListener('input', () => { readParams(); layout(); });
 $('q').addEventListener('change', layout);
