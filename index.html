@@ -140,6 +140,10 @@ progress{width:100%;accent-color:var(--accent)}
         <input id="gap" type="range" min="0.1" max="1.5" step="0.05" value="0.6">
       </div>
       <div class="row">
+        <div class="lbl">Расстояние между кольцами <b id="spacingV"></b>%</div>
+        <input id="spacing" type="range" min="20" max="100" step="1" value="100">
+      </div>
+      <div class="row">
         <div class="lbl">Вращение колец <b id="spinV"></b></div>
         <input id="spin" type="range" min="0" max="1" step="0.01" value="0.2">
       </div>
@@ -226,7 +230,7 @@ const out = $('out'), octx = out.getContext('2d');
 const vid = $('src');
 const P = {}, C = {}, level = {};
 const MAIN = ['zoom','topPct','partMin','mergeSec'];
-const GAME = ['rings','first','gap','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax','randMin','introT'];
+const GAME = ['rings','first','gap','spacing','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax','randMin','introT'];
 const COLORS = ['cRing','cBall','cAccent','cBg'];
 const BITRATE = { 480: 2000000, 720: 4000000, 1080: 6000000 };
 
@@ -286,7 +290,9 @@ function newLevel(){
   level.introF = cone ? Math.round(P.introT * 60) : 0;
   level.rings = [];
   for (let i = 0; i < level.n; i++){
-    const f = level.n > 1 ? level.first + (1 - level.first) * i / (level.n - 1) : 1;
+    // расстояние между кольцами: 100% — кольца до внешнего края, меньше — ближе друг к другу
+    const sp = P.spacing / 100;
+    const f = level.n > 1 ? level.first + sp * (1 - level.first) * i / (level.n - 1) : 1;
     const gcT = Math.random() * Math.PI * 2;
     level.rings.push({ r: gameR * f, gcT, gc: cone ? 0 : gcT, dr: cone ? 0 : gameR * f, dg: cone ? 0 : gcT, a: cone ? 0 : 1, alive: true, flash: 0, k: 0.8 + Math.random() * 0.4 });
   }
@@ -727,9 +733,9 @@ $('wallFx').addEventListener('change', readParams);
 $('shatterFx').addEventListener('change', readParams);
 $('intro').addEventListener('change', () => { readParams(); newLevel(); });
 $('rand').addEventListener('change', () => { readParams(); newLevel(); });
-for (const id of ['rings','first','gap','spin']) $(id).addEventListener('input', () => {
+for (const id of ['rings','first','gap','spacing','spin']) $(id).addEventListener('input', () => {
   readParams();
-  if (id === 'rings' || id === 'first') newLevel();
+  if (id === 'rings' || id === 'first' || id === 'spacing') newLevel();
 });
 $('topPct').addEventListener('input', () => { readParams(); layout(); });
 $('q').addEventListener('change', layout);
