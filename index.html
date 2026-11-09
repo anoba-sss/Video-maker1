@@ -127,6 +127,10 @@ progress{width:100%;accent-color:var(--accent)}
         <input id="target" type="range" min="2" max="200" step="1" value="50">
       </div>
       <div class="row">
+        <div class="lbl">Ширина дырки квадрата <b id="sqGapV"></b>%</div>
+        <input id="sqGap" type="range" min="5" max="80" step="1" value="25">
+      </div>
+      <div class="row">
         <div class="lbl">Нить от верхней грани к шару <input id="sqThread" type="checkbox" checked></div>
       </div>
       <div class="row">
@@ -295,9 +299,9 @@ const out = $('out'), octx = out.getContext('2d');
 const vid = $('src');
 const P = {}, C = {}, level = {};
 const MAIN = ['zoom','topPct','partMin','mergeSec'];
-const SQ = { gap: 25, speed: 4 }; // ширина проёма и скорость в квадрате (пока не настраиваются)
+const SQ = { speed: 4 }; // скорость проёма в квадрате (пока не настраивается)
 let curMode = 'rings'; // режим, выбранный кнопкой на главном экране
-const GAME = ['sqMin','sqMax','sqVar','trailW','trailA','rings','first','gap','spacing','spinVar','gapGrow','target','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax','randMin','introT'];
+const GAME = ['sqGap','sqMin','sqMax','sqVar','trailW','trailA','rings','first','gap','spacing','spinVar','gapGrow','target','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax','randMin','introT'];
 const COLORS = ['cRing','cBall','cAccent','cBg'];
 const BITRATE = { 480: 2000000, 720: 4000000, 1080: 6000000 };
 
@@ -512,7 +516,7 @@ function setHud(t){
 const MODE_OF = { rand:'rings', randMin:'rings', randMax:'rings', rings:'rings', first:'rings', gap:'rings',
   spacing:'rings', spinVar:'rings', gapGrow:'rings', spin:'rings', bounce:'rings', dev:'rings', speed:'rings',
   shake:'rings', shatterFx:'rings', intro:'rings', introT:'rings', target:'square',
-  ringGlow:'rings', ringPulse:'rings', sqGlow:'square', sqVar:'square', sqRainbow:'square', sqThread:'square', sqMin:'square', sqMax:'square' };
+  ringGlow:'rings', ringPulse:'rings', sqGlow:'square', sqVar:'square', sqRainbow:'square', sqThread:'square', sqGap:'square', sqMin:'square', sqMax:'square' };
 
 // у каждой настройки панели — галочка «не менять рандомайзером»
 const NO_LOCK = ['rand','randMode','randMin','randMax','sqMin','sqMax'];
@@ -553,7 +557,7 @@ function newSquare(){
   level.color = C.cRing;
   level.rings = [];
   level.introF = 0;
-  const gw = h * 2 * SQ.gap / 100;
+  const gw = h * 2 * P.sqGap / 100;
   const S = { h, gw, gx: 0, gv: 0, dir: Math.random() < 0.5 ? 1 : -1, spawnY: -h * 0.15, balls: [] };
   S.gx = (Math.random() * 2 - 1) * (h - gw / 2);
   // в рандомайзере нужное число шаров выбирается между минимумом и максимумом
@@ -572,7 +576,7 @@ function stepSquare(){
   const sc = gameR / 150, S = level.sq;
   S.h = gameR * 0.95;
   S.spawnY = -S.h * 0.15;
-  S.gw = S.h * 2 * SQ.gap / 100;
+  S.gw = S.h * 2 * P.sqGap / 100;
   S.gv = SQ.speed * 0.3 * sc;
   const target = S.rnd ? S.target : P.target;
   const n0 = S.balls.length;
