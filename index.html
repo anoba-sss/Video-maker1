@@ -85,6 +85,7 @@ progress{width:100%;accent-color:var(--accent)}
       </div>
     </div>
     <button class="ghost" id="openSettings" type="button">Настройки игры</button>
+    <button class="ghost" id="respawn" type="button" style="margin-top:8px">Переспавнить кольца и шар</button>
   </div>
 
   <div class="card">
@@ -725,6 +726,13 @@ vid.addEventListener('loadeddata', async () => {
 
 $('openSettings').addEventListener('click', () => { $('panel').hidden = false; });
 $('closePanel').addEventListener('click', () => { $('panel').hidden = true; });
+// заново создаёт кольца и шар с текущими настройками
+$('respawn').addEventListener('click', () => {
+  if (busy) return;
+  readParams();
+  shards = [];
+  layout();
+});
 
 for (const id of [...MAIN, ...GAME, ...COLORS, 'glow','fx','trail','shake','size','gravity','bounce','dev','speed','ballGlow','escFx','wallFx']){
   $(id).addEventListener('input', readParams);
