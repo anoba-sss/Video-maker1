@@ -141,7 +141,7 @@ progress{width:100%;accent-color:var(--accent)}
       </div>
       <div class="row">
         <div class="lbl">Расстояние между кольцами <b id="spacingV"></b>%</div>
-        <input id="spacing" type="range" min="20" max="100" step="1" value="100">
+        <input id="spacing" type="range" min="0" max="100" step="1" value="100">
       </div>
       <div class="row">
         <div class="lbl">Вращение колец <b id="spinV"></b></div>
@@ -290,9 +290,11 @@ function newLevel(){
   level.introF = cone ? Math.round(P.introT * 60) : 0;
   level.rings = [];
   for (let i = 0; i < level.n; i++){
-    // расстояние между кольцами: 100% — кольца до внешнего края, меньше — ближе друг к другу
+    // расстояние между кольцами: 100% — кольца до внешнего края, 0% — кольца впритык (касаются по толщине линии)
     const sp = P.spacing / 100;
-    const f = level.n > 1 ? level.first + sp * (1 - level.first) * i / (level.n - 1) : 1;
+    const full = level.n > 1 ? (1 - level.first) * gameR / (level.n - 1) : 0;
+    const step = sp * full + (1 - sp) * gameR / 58;
+    const f = level.n > 1 ? Math.min(1, level.first + step * i / gameR) : 1;
     const gcT = Math.random() * Math.PI * 2;
     level.rings.push({ r: gameR * f, gcT, gc: cone ? 0 : gcT, dr: cone ? 0 : gameR * f, dg: cone ? 0 : gcT, a: cone ? 0 : 1, alive: true, flash: 0, k: 0.8 + Math.random() * 0.4 });
   }
