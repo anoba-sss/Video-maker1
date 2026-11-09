@@ -196,6 +196,16 @@ progress{width:100%;accent-color:var(--accent)}
       <div class="row">
         <div class="lbl">Искры при касании стены <input id="wallFx" type="checkbox" checked></div>
       </div>
+      <div class="row">
+        <div class="lbl">Распад кольца при вылете шара <input id="shatterFx" type="checkbox" checked></div>
+      </div>
+      <div class="row">
+        <div class="lbl">Появление колец <select id="intro"><option value="none">Сразу</option><option value="cone">Конусом</option></select></div>
+      </div>
+      <div class="row">
+        <div class="lbl">Длительность появления <b id="introTV"></b> с</div>
+        <input id="introT" type="range" min="0.5" max="5" step="0.1" value="2">
+      </div>
     </div>
 
     <div class="card">
@@ -216,13 +226,14 @@ const out = $('out'), octx = out.getContext('2d');
 const vid = $('src');
 const P = {}, C = {}, level = {};
 const MAIN = ['zoom','topPct','partMin','mergeSec'];
-const GAME = ['rings','first','gap','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax','randMin'];
+const GAME = ['rings','first','gap','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax','randMin','introT'];
 const COLORS = ['cRing','cBall','cAccent','cBg'];
 const BITRATE = { 480: 2000000, 720: 4000000, 1080: 6000000 };
 
 let W = 405, H = 720, topH = 360, gameR = 150, cx = 0, cy = 0;
 let ball = {x:0,y:0,vx:0,vy:0}, trailPts = [], particles = [], shake = 0;
 let dur = 0, busy = false, recJob = null, dlNS = null;
+let shards = []; // осколки разрушенных колец
 
 function readParams(){
   for (const id of [...MAIN, ...GAME]) P[id] = +$(id).value;
@@ -230,6 +241,8 @@ function readParams(){
   P.ballGlow = $('ballGlow').checked;
   P.escFx = $('escFx').checked;
   P.wallFx = $('wallFx').checked;
+  P.shatter = $('shatterFx').checked;
+  P.intro = $('intro').value;
   for (const id of COLORS) C[id] = $(id).value;
   $('zoomV').textContent = P.zoom + '%';
   $('topPctV').textContent = P.topPct + '%';
@@ -267,10 +280,15 @@ function newLevel(){
     level.first = P.first;
     level.color = C.cRing;
   }
+  // появление: «Сразу» или «Конусом» (кольца сначала сходятся к центру и разворачиваются)
+  const cone = P.intro === 'cone' && P.introT > 0;
+  level.t = 0;
+  level.introF = cone ? Math.round(P.introT * 60) : 0;
   level.rings = [];
   for (let i = 0; i < level.n; i++){
     const f = level.n > 1 ? level.first + (1 - level.first) * i / (level.n - 1) : 1;
-    level.rings.push({ r: gameR * f, gc: Math.random() * Math.PI * 2, alive: true, flash: 0, k: 0.8 + Math.random() * 0.4 });
+    const gcT = Math.random() * Math.PI * 2;
+    level.rings.push({ r: gameR * f, gcT, gc: cone ? 0 : gcT, dr: cone ? 0 : gameR * f, dg: cone ? 0 : gcT, a: cone ? 0 : 1, alive: true, flash: 0, k: 0.8 + Math.random() * 0.4 });
   }
   resetBall();
 }
@@ -289,6 +307,23 @@ function burst(x, y, color, count, power){
   }
 }
 
+// распад кольца: дуга рассыпается на осколки, которые разлетаются от центра
+function shatter(ring, sc){
+  const span = Math.PI * 2 - P.gap;
+  const n = Math.min(120, Math.max(8, Math.round(span * ring.r / (gameR * 0.09))));
+  const step = span / n, len = step * ring.r * 0.9, w = Math.max(2, gameR / 60);
+  for (let i = 0; i < n; i++){
+    const th = ring.gc + P.gap / 2 + (i + 0.5) * step;
+    const cs = Math.cos(th), sn = Math.sin(th);
+    const v = (0.5 + Math.random()) * sc * 2.5 * P.fx;
+    const t = (Math.random() - 0.5) * 0.6 * sc;
+    shards.push({ x: cs * ring.r, y: sn * ring.r, vx: cs * v - sn * t, vy: sn * v + cs * t,
+      ang: th + Math.PI / 2, vr: (Math.random() - 0.5) * 0.12, len, w, color: level.color,
+      life: 1, decay: 0.008 + Math.random() * 0.012 });
+  }
+  if (shards.length > 2000) shards.splice(0, shards.length - 2000);
+}
+
 function moveGame(f, sc){
   ball.x += ball.vx * f;
   ball.y += ball.vy * f;
@@ -303,6 +338,7 @@ function moveGame(f, sc){
     const diff = Math.atan2(Math.sin(a - ring.gc), Math.cos(a - ring.gc));
     if (Math.abs(diff) < P.gap / 2){
       ring.alive = false; // вылет через проём
+      if (P.shatter && P.fx > 0) shatter(ring, sc);
       if (P.escFx) burst(nx * ring.r, ny * ring.r, level.color, 26, 2.2);
       shake = Math.max(shake, 6 * P.shake);
       continue;
@@ -326,12 +362,31 @@ function moveGame(f, sc){
 
 function stepGame(){
   const sc = gameR / 150;
-  for (const r of level.rings){
-    r.gc += P.spin * 0.01 * r.k;
+  const D = level.introF || 0;
+  const intro = D > 0 && level.t < D;
+  if (intro) level.t++;
+  const n = level.rings.length;
+  level.rings.forEach((r, i) => {
+    if (intro){
+      const u = level.t / D;
+      const p = Math.min(1, Math.max(0, (u - (i / n) * 0.5) / 0.5)); // внутренние кольца появляются раньше
+      const e = 1 - Math.pow(1 - p, 3);
+      r.dr = r.r * e; r.dg = r.gcT * e; r.gc = r.dg; r.a = p;
+    } else {
+      r.gc += P.spin * 0.01 * r.k;
+      r.dr = r.r; r.dg = r.gc; r.a = 1;
+    }
     if (r.flash > 0) r.flash *= 0.88;
+  });
+  if (!intro){
+    ball.vy += P.gravity * 0.05 * sc;
+    for (let s = 0; s < 4; s++) moveGame(0.25, sc);
   }
-  ball.vy += P.gravity * 0.05 * sc;
-  for (let s = 0; s < 4; s++) moveGame(0.25, sc);
+  for (const s of shards){
+    s.x += s.vx; s.y += s.vy; s.vx *= 0.975; s.vy *= 0.975;
+    s.ang += s.vr; s.life -= s.decay;
+  }
+  shards = shards.filter(s => s.life > 0);
 
   if (P.trail > 0){
     trailPts.push({ x: ball.x, y: ball.y });
@@ -371,11 +426,26 @@ function drawGame(){
     if (!r.alive) continue;
     octx.strokeStyle = level.color;
     octx.lineWidth = Math.max(2, gameR / 60) + r.flash * 3;
-    octx.globalAlpha = 0.75 + r.flash * 0.25;
+    octx.globalAlpha = (0.75 + r.flash * 0.25) * r.a;
     octx.shadowColor = level.color;
     octx.shadowBlur = P.fx > 0 ? 8 + r.flash * 12 : 0;
     octx.beginPath();
-    octx.arc(0, 0, r.r, r.gc + P.gap / 2, r.gc + Math.PI * 2 - P.gap / 2);
+    octx.arc(0, 0, r.dr, r.gc + P.gap / 2, r.gc + Math.PI * 2 - P.gap / 2);
+    octx.stroke();
+  }
+  octx.globalAlpha = 1;
+  octx.shadowBlur = 0;
+
+  for (const s of shards){
+    const c = Math.cos(s.ang) * s.len / 2, sn = Math.sin(s.ang) * s.len / 2;
+    octx.globalAlpha = Math.max(0, s.life);
+    octx.strokeStyle = s.color;
+    octx.lineWidth = s.w;
+    octx.shadowColor = s.color;
+    octx.shadowBlur = P.fx > 0 ? 6 : 0;
+    octx.beginPath();
+    octx.moveTo(s.x - c, s.y - sn);
+    octx.lineTo(s.x + c, s.y + sn);
     octx.stroke();
   }
   octx.globalAlpha = 1;
@@ -654,6 +724,8 @@ for (const id of [...MAIN, ...GAME, ...COLORS, 'glow','fx','trail','shake','size
 $('ballGlow').addEventListener('change', readParams);
 $('escFx').addEventListener('change', readParams);
 $('wallFx').addEventListener('change', readParams);
+$('shatterFx').addEventListener('change', readParams);
+$('intro').addEventListener('change', () => { readParams(); newLevel(); });
 $('rand').addEventListener('change', () => { readParams(); newLevel(); });
 for (const id of ['rings','first','gap','spin']) $(id).addEventListener('input', () => {
   readParams();
