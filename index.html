@@ -229,6 +229,23 @@ progress{width:100%;accent-color:var(--accent)}
         <div class="lbl">Искры при касании стены <input id="wallFx" type="checkbox" checked></div>
       </div>
       <div class="row">
+        <div class="lbl">Свечение колец <input id="ringGlow" type="checkbox" checked></div>
+      </div>
+      <div class="row">
+        <div class="lbl">Утолщение кольца при касании шара <input id="ringPulse" type="checkbox" checked></div>
+      </div>
+      <div class="row">
+        <div class="lbl">Свечение квадрата <input id="sqGlow" type="checkbox" checked></div>
+      </div>
+      <div class="row">
+        <div class="lbl">Толщина задней полосы <b id="trailWV"></b>%</div>
+        <input id="trailW" type="range" min="20" max="200" step="5" value="100">
+      </div>
+      <div class="row">
+        <div class="lbl">Яркость задней полосы <b id="trailAV"></b>%</div>
+        <input id="trailA" type="range" min="0" max="100" step="5" value="50">
+      </div>
+      <div class="row">
         <div class="lbl">Распад кольца при вылете шара <input id="shatterFx" type="checkbox" checked></div>
       </div>
       <div class="row">
@@ -260,7 +277,7 @@ const P = {}, C = {}, level = {};
 const MAIN = ['zoom','topPct','partMin','mergeSec'];
 const SQ = { gap: 25, speed: 4 }; // ширина проёма и скорость в квадрате (пока не настраиваются)
 let curMode = 'rings'; // режим, выбранный кнопкой на главном экране
-const GAME = ['rings','first','gap','spacing','spinVar','gapGrow','target','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax','randMin','introT'];
+const GAME = ['trailW','trailA','rings','first','gap','spacing','spinVar','gapGrow','target','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax','randMin','introT'];
 const COLORS = ['cRing','cBall','cAccent','cBg'];
 const BITRATE = { 480: 2000000, 720: 4000000, 1080: 6000000 };
 
@@ -278,6 +295,9 @@ function readParams(){
   P.shatter = $('shatterFx').checked;
   P.intro = $('intro').value;
   P.mode = curMode;
+  P.ringGlow = $('ringGlow').checked;
+  P.ringPulse = $('ringPulse').checked;
+  P.sqGlow = $('sqGlow').checked;
   P.randMode = $('randMode').checked;
   for (const id of COLORS) C[id] = $(id).value;
   $('zoomV').textContent = P.zoom + '%';
@@ -398,7 +418,7 @@ function moveGame(f, sc){
     if (sp > maxSp){ ball.vx *= maxSp / sp; ball.vy *= maxSp / sp; }
     ball.x = nx * (ring.r - size);
     ball.y = ny * (ring.r - size);
-    ring.flash = P.fx > 0 ? 1 : 0;
+    ring.flash = P.fx > 0 && P.ringPulse ? 1 : 0;
     if (P.wallFx) burst(nx * ring.r, ny * ring.r, C.cAccent, 6, 1.4);
     shake = Math.max(shake, 1.5 * P.shake);
     break;
@@ -406,8 +426,19 @@ function moveGame(f, sc){
 }
 
 // режим «Квадрат»: квадрат с проёмом в нижней стороне, шары прыгают вверх-вниз без отклонения
+// новый шар спавнится в месте, где нет других шаров; если места нет — в самом свободном
 function sqBall(S){
-  return { x: (Math.random() * 2 - 1) * S.h * 0.9, y: S.spawnY, vy: 0, dead: false };
+  const r = P.size * gameR / 150;
+  const half = S.h * 0.9;
+  let best = 0, bestD = -1;
+  for (let k = 0; k < 40; k++){
+    const x = (Math.random() * 2 - 1) * half;
+    let d = Infinity;
+    for (const b of S.balls) d = Math.min(d, Math.hypot(b.x - x, b.y - S.spawnY));
+    if (d > bestD){ bestD = d; best = x; }
+    if (d >= r * 2.6) break;
+  }
+  return { x: best, y: S.spawnY, vy: 0, dead: false, tr: [] };
 }
 
 // спрайт шара с отрисованным свечением: один раз на размер, дальше drawImage (быстро при многих шарах)
@@ -435,7 +466,8 @@ function setHud(t){
 // какие настройки относятся к какому режиму
 const MODE_OF = { rand:'rings', randMin:'rings', randMax:'rings', rings:'rings', first:'rings', gap:'rings',
   spacing:'rings', spinVar:'rings', gapGrow:'rings', spin:'rings', bounce:'rings', dev:'rings', speed:'rings',
-  trail:'rings', shake:'rings', shatterFx:'rings', intro:'rings', introT:'rings', target:'square' };
+  shake:'rings', shatterFx:'rings', intro:'rings', introT:'rings', target:'square',
+  ringGlow:'rings', ringPulse:'rings', sqGlow:'square' };
 
 // показывает в настройках только строки текущего режима (при рандомайзере режима — все)
 function applyModeUI(){
@@ -494,6 +526,10 @@ function stepSquare(){
     const g = P.gravity * 0.05 * sc;
     let escaped = 0;
     for (const b of S.balls){
+      if (P.trail > 0){
+        b.tr.push({ x: b.x, y: b.y });
+        if (b.tr.length > P.trail) b.tr.shift();
+      } else b.tr.length = 0;
       b.vy += g;
       for (let s = 0; s < 4; s++){
         b.y += b.vy * 0.25;
@@ -517,9 +553,9 @@ function stepSquare(){
   }
   const n = S.balls.length;
   if (n >= target){
-    // в рандомайзере режимов после паузы начинается новый уровень, иначе поле замирает
+    // после короткой паузы игра начинается заново (с учётом рандомайзера)
     S.doneT = (S.doneT || 0) + 1;
-    if (P.randMode && S.doneT > 90){ newLevel(); return; }
+    if (S.doneT > 90){ newLevel(); return; }
   } else S.doneT = 0;
   setHud('Шаров: ' + n + ' / ' + target + (n >= target ? ' — готово' : ''));
 }
@@ -529,7 +565,7 @@ function drawSquare(sc){
   octx.strokeStyle = level.color;
   octx.lineWidth = lw;
   octx.shadowColor = level.color;
-  octx.shadowBlur = P.fx > 0 ? 8 : 0;
+  octx.shadowBlur = P.fx > 0 && P.sqGlow ? 8 : 0;
   octx.globalAlpha = 1;
   octx.beginPath();
   octx.moveTo(-h, h); octx.lineTo(-h, -h); octx.lineTo(h, -h); octx.lineTo(h, h);
@@ -540,6 +576,21 @@ function drawSquare(sc){
   octx.moveTo(S.gx + S.gw / 2, h); octx.lineTo(h, h);
   octx.stroke();
 
+  // задняя полоса за каждым шаром
+  octx.shadowBlur = 0;
+  octx.strokeStyle = C.cAccent;
+  octx.lineCap = 'round';
+  octx.lineJoin = 'round';
+  for (const b of S.balls){
+    if (b.tr.length < 2) continue;
+    octx.globalAlpha = P.trailA / 100 * 0.9;
+    octx.lineWidth = P.size * sc * 1.6 * P.trailW / 100;
+    octx.beginPath();
+    octx.moveTo(b.tr[0].x, b.tr[0].y);
+    for (let i = 1; i < b.tr.length; i++) octx.lineTo(b.tr[i].x, b.tr[i].y);
+    octx.stroke();
+  }
+  octx.globalAlpha = 1;
   const spr = ballSprite(P.size * sc);
   for (const b of S.balls) octx.drawImage(spr.c, b.x - spr.size / 2, b.y - spr.size / 2);
   for (const p of particles){
@@ -624,7 +675,7 @@ function drawGame(){
     octx.lineWidth = Math.max(2, gameR / 60) + r.flash * 3;
     octx.globalAlpha = (0.75 + r.flash * 0.25) * r.a;
     octx.shadowColor = level.color;
-    octx.shadowBlur = P.fx > 0 ? 8 + r.flash * 12 : 0;
+    octx.shadowBlur = P.fx > 0 && P.ringGlow ? 8 + r.flash * 12 : 0;
     octx.beginPath();
     octx.arc(0, 0, r.dr, r.gc + r.gap / 2, r.gc + Math.PI * 2 - r.gap / 2);
     octx.stroke();
@@ -638,7 +689,7 @@ function drawGame(){
     octx.strokeStyle = s.color;
     octx.lineWidth = s.w;
     octx.shadowColor = s.color;
-    octx.shadowBlur = P.fx > 0 && shards.length < 200 ? 6 : 0; // при большом числе осколков свечение отключается ради скорости
+    octx.shadowBlur = P.fx > 0 && P.ringGlow && shards.length < 200 ? 6 : 0; // при большом числе осколков свечение отключается ради скорости
     octx.beginPath();
     octx.moveTo(s.x - c, s.y - sn);
     octx.lineTo(s.x + c, s.y + sn);
@@ -649,10 +700,10 @@ function drawGame(){
 
   for (let i = 0; i < trailPts.length; i++){
     const t = (i + 1) / trailPts.length;
-    octx.globalAlpha = t * 0.45;
+    octx.globalAlpha = t * 0.9 * P.trailA / 100;
     octx.fillStyle = C.cAccent;
     octx.beginPath();
-    octx.arc(trailPts[i].x, trailPts[i].y, P.size * sc * t * 0.8, 0, Math.PI * 2);
+    octx.arc(trailPts[i].x, trailPts[i].y, P.size * sc * t * 0.8 * P.trailW / 100, 0, Math.PI * 2);
     octx.fill();
   }
   octx.globalAlpha = 1;
@@ -927,6 +978,7 @@ for (const id of [...MAIN, ...GAME, ...COLORS, 'glow','fx','trail','shake','size
 $('ballGlow').addEventListener('change', readParams);
 $('escFx').addEventListener('change', readParams);
 $('wallFx').addEventListener('change', readParams);
+for (const id of ['ringGlow','ringPulse','sqGlow']) $(id).addEventListener('change', readParams);
 $('shatterFx').addEventListener('change', readParams);
 $('intro').addEventListener('change', () => { readParams(); newLevel(); });
 $('randMode').addEventListener('change', () => { readParams(); applyModeUI(); newLevel(); });
