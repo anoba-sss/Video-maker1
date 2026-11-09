@@ -567,7 +567,10 @@ function paintModeBtns(){
 function newSquare(){
   const h = gameR * 0.95;
   level.mode = 'square';
-  level.color = C.cRing;
+  // в рандомайзере цвет стенок квадрата меняется каждый уровень (если не зафиксирован галочкой)
+  level.color = (P.rand || P.randMode) && !P.lock.cRing
+    ? `hsl(${Math.floor(Math.random() * 360)} 90% 60%)`
+    : C.cRing;
   level.rings = [];
   level.introF = 0;
   const gw = h * 2 * P.sqGap / 100;
