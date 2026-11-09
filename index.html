@@ -124,6 +124,17 @@ progress{width:100%;accent-color:var(--accent)}
         <div class="lbl">Нужно набрать шаров на экране <b id="targetV"></b></div>
         <input id="target" type="range" min="2" max="200" step="1" value="50">
       </div>
+      <div class="row">
+        <div class="lbl">Длина задней полосы <b id="sqTrailV"></b></div>
+        <input id="sqTrail" type="range" min="0" max="400" step="5" value="150">
+      </div>
+      <div class="row">
+        <div class="lbl">Разброс скорости шаров <b id="sqVarV"></b>%</div>
+        <input id="sqVar" type="range" min="0" max="30" step="1" value="10">
+      </div>
+      <div class="row">
+        <div class="lbl">Разноцветные шары <input id="sqRainbow" type="checkbox" checked></div>
+      </div>
     </div>
 
     <div class="card">
@@ -277,7 +288,7 @@ const P = {}, C = {}, level = {};
 const MAIN = ['zoom','topPct','partMin','mergeSec'];
 const SQ = { gap: 25, speed: 4 }; // ширина проёма и скорость в квадрате (пока не настраиваются)
 let curMode = 'rings'; // режим, выбранный кнопкой на главном экране
-const GAME = ['trailW','trailA','rings','first','gap','spacing','spinVar','gapGrow','target','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax','randMin','introT'];
+const GAME = ['sqTrail','sqVar','trailW','trailA','rings','first','gap','spacing','spinVar','gapGrow','target','spin','size','gravity','bounce','dev','speed','glow','fx','trail','shake','randMax','randMin','introT'];
 const COLORS = ['cRing','cBall','cAccent','cBg'];
 const BITRATE = { 480: 2000000, 720: 4000000, 1080: 6000000 };
 
@@ -298,6 +309,7 @@ function readParams(){
   P.ringGlow = $('ringGlow').checked;
   P.ringPulse = $('ringPulse').checked;
   P.sqGlow = $('sqGlow').checked;
+  P.sqRainbow = $('sqRainbow').checked;
   P.randMode = $('randMode').checked;
   for (const id of COLORS) C[id] = $(id).value;
   $('zoomV').textContent = P.zoom + '%';
@@ -438,23 +450,43 @@ function sqBall(S){
     if (d > bestD){ bestD = d; best = x; }
     if (d >= r * 2.6) break;
   }
-  return { x: best, y: S.spawnY, vy: 0, dead: false, tr: [] };
+  // у каждого шара свой оттенок и немного своя скорость падения: со временем они прыгают не синхронно
+  return { x: best, y: S.spawnY, vy: 0, dead: false, tr: [],
+    hue: 220 + Math.random() * 110,
+    k: 1 + (Math.random() * 2 - 1) * P.sqVar / 100 };
 }
 
-// спрайт шара с отрисованным свечением: один раз на размер, дальше drawImage (быстро при многих шарах)
-let sprCache = null;
-function ballSprite(r){
+// спрайт шара (градиент, светлая обводка, свечение): создаётся один раз на оттенок и размер,
+// дальше копируется через drawImage — быстро даже при многих шарах
+const sprMap = new Map();
+function ballSprite(r, hue){
   const glow = P.ballGlow ? P.glow : 0;
-  const key = r.toFixed(2) + '|' + C.cBall + '|' + glow;
-  if (sprCache && sprCache.key === key) return sprCache;
+  const hb = hue == null ? null : Math.round(hue / 6) * 6 % 360;
+  const key = r.toFixed(1) + '|' + (hb == null ? C.cBall : hb) + '|' + glow;
+  let s = sprMap.get(key);
+  if (s) return s;
+  if (sprMap.size > 400) sprMap.clear();
   const size = Math.ceil((r + glow * 1.5) * 2) + 2;
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const g = c.getContext('2d');
-  g.shadowColor = C.cBall; g.shadowBlur = glow; g.fillStyle = C.cBall;
-  g.beginPath(); g.arc(size / 2, size / 2, r, 0, Math.PI * 2); g.fill();
-  sprCache = { key, c, size };
-  return sprCache;
+  const mid = size / 2;
+  const base = hb == null ? C.cBall : `hsl(${hb} 95% 60%)`;
+  const dark = hb == null ? 'rgba(0,0,0,0.55)' : `hsl(${hb} 90% 18%)`;
+  const grd = g.createRadialGradient(mid, mid, 0, mid, mid, r);
+  grd.addColorStop(0, dark);
+  grd.addColorStop(0.6, base);
+  grd.addColorStop(1, base);
+  g.shadowColor = base; g.shadowBlur = glow;
+  g.fillStyle = grd;
+  g.beginPath(); g.arc(mid, mid, r, 0, Math.PI * 2); g.fill();
+  g.shadowBlur = 0;
+  g.lineWidth = Math.max(1, r * 0.12);
+  g.strokeStyle = 'rgba(255,255,255,0.8)';
+  g.stroke();
+  s = { c, size };
+  sprMap.set(key, s);
+  return s;
 }
 
 // строка счётчика пишется в DOM только когда меняется
@@ -467,7 +499,7 @@ function setHud(t){
 const MODE_OF = { rand:'rings', randMin:'rings', randMax:'rings', rings:'rings', first:'rings', gap:'rings',
   spacing:'rings', spinVar:'rings', gapGrow:'rings', spin:'rings', bounce:'rings', dev:'rings', speed:'rings',
   shake:'rings', shatterFx:'rings', intro:'rings', introT:'rings', target:'square',
-  ringGlow:'rings', ringPulse:'rings', sqGlow:'square' };
+  ringGlow:'rings', ringPulse:'rings', sqGlow:'square', sqTrail:'square', sqVar:'square', sqRainbow:'square' };
 
 // показывает в настройках только строки текущего режима (при рандомайзере режима — все)
 function applyModeUI(){
@@ -526,11 +558,11 @@ function stepSquare(){
     const g = P.gravity * 0.05 * sc;
     let escaped = 0;
     for (const b of S.balls){
-      if (P.trail > 0){
+      if (P.sqTrail > 0){
         b.tr.push({ x: b.x, y: b.y });
-        if (b.tr.length > P.trail) b.tr.shift();
+        if (b.tr.length > P.sqTrail) b.tr.shift();
       } else b.tr.length = 0;
-      b.vy += g;
+      b.vy += g * b.k;
       for (let s = 0; s < 4; s++){
         b.y += b.vy * 0.25;
         if (b.y >= S.h){
@@ -576,23 +608,25 @@ function drawSquare(sc){
   octx.moveTo(S.gx + S.gw / 2, h); octx.lineTo(h, h);
   octx.stroke();
 
-  // задняя полоса за каждым шаром
+  // тонкая светлая полоса-след за каждым шаром
   octx.shadowBlur = 0;
-  octx.strokeStyle = C.cAccent;
+  octx.strokeStyle = C.cBall;
   octx.lineCap = 'round';
   octx.lineJoin = 'round';
   for (const b of S.balls){
     if (b.tr.length < 2) continue;
-    octx.globalAlpha = P.trailA / 100 * 0.9;
-    octx.lineWidth = P.size * sc * 1.6 * P.trailW / 100;
+    octx.globalAlpha = P.trailA / 100 * 0.8;
+    octx.lineWidth = Math.max(1, gameR / 120) * P.trailW / 100;
     octx.beginPath();
     octx.moveTo(b.tr[0].x, b.tr[0].y);
     for (let i = 1; i < b.tr.length; i++) octx.lineTo(b.tr[i].x, b.tr[i].y);
     octx.stroke();
   }
   octx.globalAlpha = 1;
-  const spr = ballSprite(P.size * sc);
-  for (const b of S.balls) octx.drawImage(spr.c, b.x - spr.size / 2, b.y - spr.size / 2);
+  for (const b of S.balls){
+    const spr = ballSprite(P.size * sc, P.sqRainbow ? b.hue : null);
+    octx.drawImage(spr.c, b.x - spr.size / 2, b.y - spr.size / 2);
+  }
   for (const p of particles){
     octx.globalAlpha = Math.max(p.life, 0);
     octx.fillStyle = p.color;
@@ -978,7 +1012,7 @@ for (const id of [...MAIN, ...GAME, ...COLORS, 'glow','fx','trail','shake','size
 $('ballGlow').addEventListener('change', readParams);
 $('escFx').addEventListener('change', readParams);
 $('wallFx').addEventListener('change', readParams);
-for (const id of ['ringGlow','ringPulse','sqGlow']) $(id).addEventListener('change', readParams);
+for (const id of ['ringGlow','ringPulse','sqGlow','sqRainbow']) $(id).addEventListener('change', readParams);
 $('shatterFx').addEventListener('change', readParams);
 $('intro').addEventListener('change', () => { readParams(); newLevel(); });
 $('randMode').addEventListener('change', () => { readParams(); applyModeUI(); newLevel(); });
