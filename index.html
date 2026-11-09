@@ -389,7 +389,9 @@ function newLevel(){
     // расстояние между кольцами: 100% — кольца до внешнего края, 0% — кольца впритык (касаются по толщине линии)
     const sp = P.spacing / 100;
     const full = level.n > 1 ? (1 - level.first) * gameR / (level.n - 1) : 0;
-    const step = sp * full + (1 - sp) * gameR / 58;
+    // минимальный шаг — толщина кольца, чтобы кольца никогда не налезали друг на друга
+    const thick = Math.max(2, gameR / 60) * P.ringW / 100;
+    const step = Math.max(thick, sp * full + (1 - sp) * thick);
     const f = level.n > 1 ? Math.min(1, level.first + step * i / gameR) : 1;
     const gcT = Math.random() * Math.PI * 2;
     level.rings.push({ r: gameR * f, gcT, gc: cone ? 0 : gcT, dr: cone ? 0 : gameR * f, dg: cone ? 0 : gcT, a: cone ? 0 : 1, alive: true, flash: 0, k: 1 + (Math.random() * 2 - 1) * P.spinVar / 100 });
